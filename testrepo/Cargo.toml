@@ -6,4 +6,4 @@ edition = "2025"
 [dependencies]
 dep1 = "1.0"
 dep2 = "0.8"
-dep3 = "1.10"
+dep3 = "1.1"

@@ -100,6 +100,7 @@ def validate_repo(args: argparse.Namespace) -> None: #проверяем адр�
 
 # 2
 
+
 def load_cargo_toml_test(args: argparse.Namespace) -> str: #нужен файл cargo
     cargo_path = os.path.join(args.repo, "Cargo.toml")
     if not os.path.isfile(cargo_path):
