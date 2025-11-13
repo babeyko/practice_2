@@ -1,0 +1,5 @@
+#test mode
+python practice_2.py -p mypkg -r testrepo --mode test
+
+#real mode
+python practice_2.py -p mypkg -r https://github.com/BurntSushi/ripgrep --mode real
