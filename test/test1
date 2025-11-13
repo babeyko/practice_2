@@ -1,17 +1,17 @@
 #успешный
-python main.py -p react -r https://github.com/facebook/react --mode real -o depgraph.png -d 2
+python practice_2.py -p react -r https://github.com/facebook/react --mode real -o depgraph.png -d 2
 
 #ошибка в имени файла
-python main.py -p react -r https://github.com/facebook/react --mode real -o graph.jpg -d 2
+python practice_2.py -p react -r https://github.com/facebook/react --mode real -o graph.jpg -d 2
 
 #ошибка в глубине
-python main.py -p react -r https://github.com/facebook/react --mode real -o depgraph.png -d 0
+python practice_2.py -p react -r https://github.com/facebook/react --mode real -o depgraph.png -d 0
 
 #пустое имя пакета
-python main.py -p "" -r https://github.com/facebook/react --mode real
+python practice_2.py -p "" -r https://github.com/facebook/react --mode real
 
 #неверный URL
-python main.py -p react -r not_a_url --mode real
+python practice_2.py -p react -r not_a_url --mode real
 
 #несуществующий путь
-python main.py -p A -r ./no_dir --mode test
+python practice_2.py -p A -r ./no_dir --mode test
