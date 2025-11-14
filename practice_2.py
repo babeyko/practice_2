@@ -72,6 +72,12 @@ def build_parser() -> argparse.ArgumentParser: #парсер для аргуме
         help="Имя ветки репозитория (для режима real)"
     )
 
+    parser.add_argument( #4 этап
+        "--reverse-deps",
+        action="store_true",
+        help="Вывести обратные зависимости для указанного пакета (только тестовый режим)",
+    )
+
     return parser
 
 
@@ -322,7 +328,50 @@ def print_graph_analysis(start: str,
     else:
         print(" циклы не обнаружены")
 
+#4
+def build_reverse_graph(graph: dict[str, list[str]]) -> dict[str, list[str]]:
+    rev: dict[str, list[str]] = {}
 
+    #вершины без рёбер
+    for node in graph.keys():
+        rev.setdefault(node, [])
+
+    #рёбра перевернуть
+    for u, neighbors in graph.items():
+        for v in neighbors:
+            if v not in rev:
+                rev[v] = []
+            rev[v].append(u)
+
+    return rev
+
+def print_reverse_dependencies(finish: str,  #вывод
+                               reachable: set[str],
+                               edges: list[tuple[str, str]],
+                               cycles: list[tuple[str, str]]) -> None:
+    dependents = sorted(x for x in reachable if x != finish)
+
+    print()
+    print(f"Целевой пакет: {finish}")
+    if dependents:
+        print("Пакеты, зависящие от него:")
+        print(" " + ", ".join(dependents))
+    else:
+        print("Нет пакетов, зависящих от него (на заданной глубине).")
+
+    print("Рёбра u -> v: u зависит от v:")
+    if edges:
+        for u, v in edges:
+            print(f" {u} -> {v}")
+    else:
+        print(" (нет рёбер)")
+
+    print("Циклы в обратном графе:")
+    if cycles:
+        for u, v in cycles:
+            print(f" цикл: {u} -> {v} (узел {v} уже есть на текущем пути)")
+    else:
+        print(" циклы не обнаружены")
 
 def main() -> None:
     parser = build_parser()
@@ -357,15 +406,30 @@ def main() -> None:
         )
         print_graph_analysis(args.package_name, reachable, edges, cycles)
 
+
     else:
         graph = load_test_graph(args.repo)
 
-        reachable, edges, cycles = dfs_dependencies_iterative(
-            start=args.package_name,
-            graph=graph,
-            max_depth=args.max_depth,
-        )
-        print_graph_analysis(args.package_name, reachable, edges, cycles)
+        if getattr(args, "reverse_deps", False):
+            rev_graph = build_reverse_graph(graph)
+
+            reachable, edges, cycles = dfs_dependencies_iterative(
+                start=args.package_name,
+                graph=rev_graph,
+                max_depth=args.max_depth,
+            )
+
+            print_reverse_dependencies(args.package_name, reachable, edges, cycles)
+
+        else:
+            #как в этапе 3
+            reachable, edges, cycles = dfs_dependencies_iterative(
+                start=args.package_name,
+                graph=graph,
+                max_depth=args.max_depth,
+            )
+
+            print_graph_analysis(args.package_name, reachable, edges, cycles)
 
 
 
