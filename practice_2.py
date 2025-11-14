@@ -85,7 +85,7 @@ def validate_repo(args: argparse.Namespace) -> None: #проверяем адр�
     mode = args.mode
 
     if mode == "test":
-        #нужен существующий путь (файл или директория)
+        #нужен существующий путь
         if not os.path.exists(repo):
             raise SystemExit(
                 f"<Ошибка> Тестовый репозиторий '{repo}' не найден на диске"
@@ -114,7 +114,7 @@ def load_cargo_toml_test(args: argparse.Namespace) -> str: #нужен файл 
         raise SystemExit(f"<Ошибка> Не удалось прочитать {cargo_path}: {e}")
 
 
-def build_github_raw_cargo_url(repo_url: str, branch: str) -> str:
+def build_github_raw_cargo_url(repo_url: str, branch: str) -> str: #перелопатим, чтобы потом использовать
     parsed = urlparse(repo_url)
     if parsed.netloc != "github.com":
         raise SystemExit(
@@ -133,12 +133,12 @@ def build_github_raw_cargo_url(repo_url: str, branch: str) -> str:
     if repo.endswith(".git"):
         repo = repo[:-4]
 
-    # https://raw.githubusercontent.com/<owner>/<repo>/<branch>/Cargo.toml
+    #https://raw.githubusercontent.com/<owner>/<repo>/<branch>/Cargo.toml
     raw_url = f"https://raw.githubusercontent.com/{owner}/{repo}/{branch}/Cargo.toml"
     return raw_url
 
 
-def load_cargo_toml_real(args: argparse.Namespace) -> str:
+def load_cargo_toml_real(args: argparse.Namespace) -> str: #нужен карго
     raw_url = build_github_raw_cargo_url(args.repo, args.branch)
     try:
         #простой запрос
@@ -158,7 +158,7 @@ def load_cargo_toml_real(args: argparse.Namespace) -> str:
         raise SystemExit(f"<Ошибка> Ошибка сети при обращении к {raw_url}: {e}")
 
 
-def parse_cargo_dependencies(cargo_toml: str) -> dict:
+def parse_cargo_dependencies(cargo_toml: str) -> dict: #собираем зависимости в читабельное
     deps: dict[str, str] = {}
     in_deps = False
 
@@ -203,6 +203,126 @@ def print_direct_dependencies(deps: dict) -> None:
     for name, value in deps.items():
         print(f" {name} = {value}")
 
+def load_test_graph(path: str) -> dict[str, list[str]]: #нужен граф
+    graph: dict[str, list[str]] = {}
+
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            for lineno, raw_line in enumerate(f, start=1):
+                line = raw_line.strip()
+                if not line or line.startswith("#"):
+                    continue
+
+                if ":" not in line:
+                    raise SystemExit(
+                        f"<Ошибка> Некорректный формат в {path}:{lineno}: "
+                        f"ожидается 'A: B C D'"
+                    )
+
+                left, right = line.split(":", 1)
+                node = left.strip()
+
+                #одна или несколько заглавных букв
+                if not node.isalpha() or not node.isupper():
+                    raise SystemExit(
+                        f"<Ошибка> Некорректное имя узла '{node}' в {path}:{lineno}: "
+                        f"ожидаются большие латинские буквы"
+                    )
+
+                deps: list[str] = []
+                for tok in right.split():
+                    dep = tok.strip()
+                    if not dep:
+                        continue
+                    if not dep.isalpha() or not dep.isupper():
+                        raise SystemExit(
+                            f"<Ошибка> Некорректное имя зависимости '{dep}' "
+                            f"в {path}:{lineno}: ожидаются большие латинские буквы"
+                        )
+                    deps.append(dep)
+
+                graph[node] = deps
+    except OSError as e:
+        raise SystemExit(f"<Ошибка> Не удалось прочитать файл тестового графа {path}: {e}")
+
+    return graph
+
+#dfs - depth first search
+def dfs_dependencies_iterative(start: str, graph: dict[str, list[str]], max_depth: int): #просмотр графа
+    if start not in graph:
+        print(f"<Предупреждение> Стартовый узел '{start}' отсутствует в графе")
+        #всё равно попробуем отобразить
+        if start not in graph:
+            graph.setdefault(start, [])
+
+    #0: не смотрели, 1:на пути, 2: обработан
+    watch: dict[str, int] = {}
+    reachable: set[str] = set()
+    edges: list[tuple[str, str]] = []
+    cycles: list[tuple[str, str]] = []
+
+    #стек: (узел, глубина, состояние)
+    stack: list[tuple[str, int, str]] = [(start, 0, "enter")]
+
+    while stack:
+        node, depth, state = stack.pop()
+
+        if state == "exit": #выходим по заметке
+            #помечаем как обработанную
+            watch[node] = 2
+            continue
+
+        #"enter"
+        if watch.get(node, 0) == 0:
+            watch[node] = 1       #уже в пути
+            reachable.add(node)   #достижимая
+
+            #планируем выход из вершины
+            stack.append((node, depth, "exit"))
+
+            if depth >= max_depth:
+                #максимальная глубина: дальше не надо
+                continue
+
+            #в стек в обратном порядке
+            neighbors = graph.get(node, [])
+            for neigh in reversed(neighbors):
+                edges.append((node, neigh))
+
+                if watch.get(neigh, 0) == 1:
+                    # neigh уже есть: цикл
+                    cycles.append((node, neigh))
+                elif watch.get(neigh, 0) == 0:
+                    #не посещали: надо
+                    stack.append((neigh, depth + 1, "enter"))
+
+    return reachable, edges, cycles
+
+
+def print_graph_analysis(start: str,
+                         reachable: set[str],
+                         edges: list[tuple[str, str]],
+                         cycles: list[tuple[str, str]]) -> None:
+
+    print()
+    print(f"Стартовый пакет: {start}")
+    print(f"Достижимые пакеты: {', '.join(sorted(reachable)) if reachable else '(нет)'}")
+
+    print("Рёбра зависимостей:")
+    if edges:
+        for u, v in edges:
+            print(f" {u} -> {v}")
+    else:
+        print(" (нет рёбер)")
+
+    print("Циклические зависимости:")
+    if cycles:
+        for u, v in cycles:
+            print(f" цикл: {u} -> {v} (узел {v} уже есть на текущем пути)")
+    else:
+        print(" циклы не обнаружены")
+
+
 
 def main() -> None:
     parser = build_parser()
@@ -218,13 +338,35 @@ def main() -> None:
     print(f" out          = {args.out}")
     print(f" max_depth    = {args.max_depth}")
 
-    if args.mode == "test":
-        cargo_toml = load_cargo_toml_test(args)
-    else:
+    if args.mode == "real":
+        #реальный репозиторий
         cargo_toml = load_cargo_toml_real(args)
+        deps = parse_cargo_dependencies(cargo_toml)
+        print_direct_dependencies(deps)
 
-    deps = parse_cargo_dependencies(cargo_toml)
-    print_direct_dependencies(deps)
+        #root: все deps.
+        graph: dict[str, list[str]] = {
+            args.package_name: list(deps.keys())
+        }
+
+#3
+        reachable, edges, cycles = dfs_dependencies_iterative(
+            start=args.package_name,
+            graph=graph,
+            max_depth=args.max_depth,
+        )
+        print_graph_analysis(args.package_name, reachable, edges, cycles)
+
+    else:
+        graph = load_test_graph(args.repo)
+
+        reachable, edges, cycles = dfs_dependencies_iterative(
+            start=args.package_name,
+            graph=graph,
+            max_depth=args.max_depth,
+        )
+        print_graph_analysis(args.package_name, reachable, edges, cycles)
+
 
 
 if __name__ == "__main__":

@@ -1,0 +1,8 @@
+#для 1 графа
+python practice_2.py -p A -r graphs\graph1.txt --mode test -d 3
+
+#для 2 графа
+python practice_2.py -p A -r graphs\graph2.txt --mode test -d 5
+
+#для проверки, что глубина нормально работает
+python practice_2.py -p A -r graphs\graph3.txt --mode test -d 2
