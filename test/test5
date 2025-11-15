@@ -1,0 +1,10 @@
+#для 1 графа
+python practice_2.py -p A -r graphs\graph1.txt --mode test -d 3 -o graph1.png
+
+#для цикличного графа
+python practice_2.py -p A -r graphs\graph2.txt --mode test -d 10 -o graph2.png
+
+#для обратного графа
+python practice_2.py -p D -r graphs\graph3.txt --mode test -d 5 --reverse-deps -o graph3.png
+
+python practice_2.py -p ripgrep -r https://github.com/BurntSushi/ripgrep --mode real  -d 5 -o graphreal.png
