@@ -1,0 +1,8 @@
+#D
+python practice_2.py -p D -r graphs\graph4.txt --mode test -d 10 --reverse-deps
+
+#цикл
+python practice_2.py -p A -r graphs\graph2.txt --mode test -d 10 --reverse-deps
+
+#проверка глубины
+python practice_2.py -p E -r graphs\graph3.txt --mode test -d 2 --reverse-deps

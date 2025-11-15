@@ -1,6 +1,7 @@
 import argparse
 import os
 import sys
+import subprocess
 from urllib.parse import urlparse
 from urllib.request import urlopen, Request
 
@@ -70,6 +71,12 @@ def build_parser() -> argparse.ArgumentParser: #парсер для аргуме
         "--branch",
         default="master",
         help="Имя ветки репозитория (для режима real)"
+    )
+
+    parser.add_argument( #4 этап
+        "--reverse-deps",
+        action="store_true",
+        help="Вывести обратные зависимости для указанного пакета (только тестовый режим)",
     )
 
     return parser
@@ -298,6 +305,17 @@ def dfs_dependencies_iterative(start: str, graph: dict[str, list[str]], max_dept
 
     return reachable, edges, cycles
 
+#5
+def edges_from_dfs(edges: list[tuple[str, str]]) -> list[tuple[str, str]]:
+    result: list[tuple[str, str]] = []
+    seen: set[tuple[str, str]] = set()
+
+    for u, v in edges:
+        if (u, v) not in seen:
+            seen.add((u, v))
+            result.append((u, v))
+
+    return result
 
 def print_graph_analysis(start: str,
                          reachable: set[str],
@@ -321,6 +339,118 @@ def print_graph_analysis(start: str,
             print(f" цикл: {u} -> {v} (узел {v} уже есть на текущем пути)")
     else:
         print(" циклы не обнаружены")
+
+#4
+def build_reverse_graph(graph: dict[str, list[str]]) -> dict[str, list[str]]:
+    rev: dict[str, list[str]] = {}
+
+    #вершины без рёбер
+    for node in graph.keys():
+        rev.setdefault(node, [])
+
+    #рёбра перевернуть
+    for u, neighbors in graph.items():
+        for v in neighbors:
+            if v not in rev:
+                rev[v] = []
+            rev[v].append(u)
+
+    return rev
+
+def print_reverse_dependencies(finish: str,  #вывод
+                               reachable: set[str],
+                               edges: list[tuple[str, str]],
+                               cycles: list[tuple[str, str]]) -> None:
+    dependents = sorted(x for x in reachable if x != finish)
+
+    print()
+    print(f"Целевой пакет: {finish}")
+    if dependents:
+        print("Пакеты, зависящие от него:")
+        print(" " + ", ".join(dependents))
+    else:
+        print("Нет пакетов, зависящих от него (на заданной глубине).")
+
+    print("Рёбра u -> v: u зависит от v:")
+    if edges:
+        for u, v in edges:
+            print(f" {u} -> {v}")
+    else:
+        print(" (нет рёбер)")
+
+    print("Циклы в обратном графе:")
+    if cycles:
+        for u, v in cycles:
+            print(f" цикл: {u} -> {v} (узел {v} уже есть на текущем пути)")
+    else:
+        print("Циклы не обнаружены.")
+
+#5
+def make_plantuml_from_edges(edges: list[tuple[str, str]],
+                              title: str | None = None) -> str:
+    lines: list[str] = []
+    lines.append("@startuml")
+    if title:
+        lines.append(f"title {title}")
+
+    seen = set()
+    for u, v in edges:
+        if (u, v) in seen:
+            continue
+        seen.add((u, v))
+        lines.append(f'"{u}" --> "{v}"')
+
+    lines.append("@enduml")
+    return "\n".join(lines)
+
+def get_puml_path_from_png(png_path: str) -> str: #в -о мы вводим только png, поэтому перекорячиваем
+    base, ext = os.path.splitext(png_path)
+    if ext.lower() == ".png":
+        return base + ".puml"
+    else:
+        return png_path + ".puml"
+
+def generate_png_from_plantuml(puml_path: str, png_path: str) -> None:
+    try:
+        if os.name == "nt":
+            #запускаем через cmd.exe
+            cmd = ["cmd", "/c", "plantuml", "-tpng", puml_path]
+        else:
+            cmd = ["plantuml", "-tpng", puml_path]
+
+        subprocess.run(cmd, check=True)
+    except FileNotFoundError:
+        print("<Предупреждение> PlantUML не найден в PATH. "
+              "Сгенерируйте PNG вручную из файла:", puml_path)
+        return
+    except subprocess.CalledProcessError as e:
+        print(f"<Предупреждение> Ошибка при запуске PlantUML: {e}")
+        return
+
+    generated_png = os.path.splitext(puml_path)[0] + ".png"
+
+    if generated_png != png_path and os.path.exists(generated_png):
+        os.replace(generated_png, png_path)
+
+def export_graph_as_plantuml_and_png(edges_from_dfs_result: list[tuple[str, str]],
+                                     package_name: str,
+                                     png_out: str) -> None:
+
+    edges = edges_from_dfs(edges_from_dfs_result)
+
+    if not edges:
+        print("Граф пустой, визуализировать нечего.")
+        return
+
+    puml_path = get_puml_path_from_png(png_out)
+    title = f"Зависимости для {package_name}"
+
+    plantuml_text = make_plantuml_from_edges(edges, title=title)
+
+    with open(puml_path, "w", encoding="utf-8") as f:
+        f.write(plantuml_text)
+
+    generate_png_from_plantuml(puml_path, png_out)
 
 
 
@@ -357,16 +487,48 @@ def main() -> None:
         )
         print_graph_analysis(args.package_name, reachable, edges, cycles)
 
+#5
+        export_graph_as_plantuml_and_png(
+            edges_from_dfs_result=edges,
+            package_name=args.package_name,
+            png_out=args.out,
+        )
+
     else:
         graph = load_test_graph(args.repo)
 
-        reachable, edges, cycles = dfs_dependencies_iterative(
-            start=args.package_name,
-            graph=graph,
-            max_depth=args.max_depth,
-        )
-        print_graph_analysis(args.package_name, reachable, edges, cycles)
+        if getattr(args, "reverse_deps", False):
+            rev_graph = build_reverse_graph(graph)
 
+            reachable, edges, cycles = dfs_dependencies_iterative(
+                start=args.package_name,
+                graph=rev_graph,
+                max_depth=args.max_depth,
+            )
+
+            print_reverse_dependencies(args.package_name, reachable, edges, cycles)
+
+            export_graph_as_plantuml_and_png(
+                edges_from_dfs_result=edges,
+                package_name=args.package_name,
+                png_out=args.out,
+            )
+
+        else:
+            #как в этапе 3
+            reachable, edges, cycles = dfs_dependencies_iterative(
+                start=args.package_name,
+                graph=graph,
+                max_depth=args.max_depth,
+            )
+
+#5
+            print_graph_analysis(args.package_name, reachable, edges, cycles)
+            export_graph_as_plantuml_and_png(
+                edges_from_dfs_result=edges,
+                package_name=args.package_name,
+                png_out=args.out,
+            )
 
 
 if __name__ == "__main__":
